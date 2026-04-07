@@ -1,0 +1,25 @@
+{
+  "id": "wecom",
+  "name": "WeCom Channel",
+  "version": "0.1.0",
+  "kind": "channel",
+  "runtime": "node",
+  "entry": "dist/main.js",
+  "build": "npm install && npm run build",
+  "minHostVersion": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "bot_id": { "type": "string", "description": "WeCom Bot ID from Admin Console" },
+      "secret": { "type": "string", "description": "WeCom Bot Secret" }
+    },
+    "required": ["bot_id", "secret"]
+  },
+  "capabilities": {
+    "streaming": false,
+    "interactiveCards": false,
+    "reactions": false,
+    "editMessage": false,
+    "media": true
+  }
+}
