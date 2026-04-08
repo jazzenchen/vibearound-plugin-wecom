@@ -15,6 +15,7 @@ import {
   type WsFrame,
 } from "@wecom/aibot-node-sdk";
 import type { Agent, ContentBlock } from "@vibearound/plugin-channel-sdk";
+import { extractErrorMessage } from "@vibearound/plugin-channel-sdk";
 import type { AgentStreamHandler } from "./agent-stream.js";
 
 export interface WeComConfig {
@@ -155,12 +156,7 @@ export class WeComBot {
       this.log("info", `prompt done chat=${channelId} stopReason=${response.stopReason}`);
       this.streamHandler?.onTurnEnd(channelId);
     } catch (error: unknown) {
-      const errMsg =
-        error instanceof Error
-          ? error.message
-          : typeof error === "object" && error !== null && "message" in error
-            ? String((error as { message: unknown }).message)
-            : String(error);
+      const errMsg = extractErrorMessage(error);
       this.log("error", `prompt failed chat=${channelId}: ${errMsg}`);
       this.streamHandler?.onTurnError(channelId, errMsg);
     }
