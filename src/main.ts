@@ -25,6 +25,6 @@ runChannelPlugin({
       log,
       cacheDir,
     ),
-  createStreamHandler: (bot, log, verbose) =>
+  createRenderer: (bot, log, verbose) =>
     new AgentStreamHandler(bot, log, verbose),
 });
