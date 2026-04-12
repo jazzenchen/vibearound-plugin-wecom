@@ -58,7 +58,7 @@ export class WeComBot {
   private log: LogFn;
   private cacheDir: string;
   private streamHandler: AgentStreamHandler | null = null;
-  /** Map channelId → latest pending frame, used for replying */
+  /** Map chatId → latest pending frame, used for replying */
   private pending = new Map<string, PendingFrame>();
 
   constructor(config: WeComConfig, agent: Agent, log: LogFn, cacheDir: string) {
@@ -78,34 +78,34 @@ export class WeComBot {
   }
 
   /**
-   * Resolve a stable channelId for the WeCom message.
+   * Resolve a stable chatId for the WeCom message.
    * - Group chats: chatid
    * - Single (DM): from.userid
    */
-  private channelIdOf(msg: BaseMessage): string {
+  private chatIdOf(msg: BaseMessage): string {
     if (msg.chattype === "group" && msg.chatid) {
-      return `wecom:group:${msg.chatid}`;
+      return `group:${msg.chatid}`;
     }
-    return `wecom:user:${msg.from?.userid ?? "unknown"}`;
+    return `dm:${msg.from?.userid ?? "unknown"}`;
   }
 
   /** Get the pending frame for a channel (used by stream handler to reply). */
-  getPendingFrame(channelId: string): PendingFrame | null {
-    return this.pending.get(channelId) ?? null;
+  getPendingFrame(chatId: string): PendingFrame | null {
+    return this.pending.get(chatId) ?? null;
   }
 
   /** Reply to a WeCom message with streaming markdown content. */
-  async replyMarkdown(channelId: string, content: string, finish: boolean): Promise<void> {
-    const pending = this.pending.get(channelId);
+  async replyMarkdown(chatId: string, content: string, finish: boolean): Promise<void> {
+    const pending = this.pending.get(chatId);
     if (!pending) {
-      this.log("warn", `no pending frame for channel=${channelId}, dropping reply`);
+      this.log("warn", `no pending frame for channel=${chatId}, dropping reply`);
       return;
     }
     try {
       await this.client.replyStream(pending.frame, pending.streamId, content, finish);
       if (finish) {
         // Clear after final reply
-        this.pending.delete(channelId);
+        this.pending.delete(chatId);
       }
     } catch (e) {
       const err = e as { message?: string };
@@ -167,7 +167,7 @@ export class WeComBot {
     const msg = frame.body;
     if (!msg) return;
 
-    const channelId = this.channelIdOf(msg);
+    const chatId = this.chatIdOf(msg);
     const senderId = msg.from?.userid ?? "unknown";
 
     // Extract text + image items up-front so we can log and decide whether
@@ -193,24 +193,24 @@ export class WeComBot {
         }
       }
     } else {
-      this.log("debug", `ignoring unsupported msgtype=${msg.msgtype} chat=${channelId}`);
+      this.log("debug", `ignoring unsupported msgtype=${msg.msgtype} chat=${chatId}`);
       return;
     }
 
     if (texts.length === 0 && images.length === 0) {
-      this.log("debug", `empty message chat=${channelId} msgtype=${msg.msgtype}, skipping`);
+      this.log("debug", `empty message chat=${chatId} msgtype=${msg.msgtype}, skipping`);
       return;
     }
 
     // Generate a stream id for this turn (stable across all replyStream calls).
     // Pin the pending frame so agent-stream's replyStream calls find it.
     const streamId = `${msg.msgid}-stream`;
-    this.pending.set(channelId, { frame, streamId });
+    this.pending.set(chatId, { frame, streamId });
 
     const preview = texts.join(" ").slice(0, 80);
     this.log(
       "debug",
-      `message chat=${channelId} sender=${senderId} msgtype=${msg.msgtype} texts=${texts.length} images=${images.length} preview=${preview}`,
+      `message chat=${chatId} sender=${senderId} msgtype=${msg.msgtype} texts=${texts.length} images=${images.length} preview=${preview}`,
     );
 
     // Download every attached image into the cache directory. Skip any
@@ -218,7 +218,7 @@ export class WeComBot {
     // downloaded plus the text.
     const downloaded: DownloadedImage[] = [];
     for (const image of images) {
-      const local = await this.downloadImage(channelId, msg.msgid, image).catch(
+      const local = await this.downloadImage(chatId, msg.msgid, image).catch(
         (err: unknown) => {
           this.log(
             "warn",
@@ -254,24 +254,24 @@ export class WeComBot {
     }
 
     if (contentBlocks.length === 0) {
-      this.log("warn", `no content blocks produced for chat=${channelId}, dropping`);
-      this.pending.delete(channelId);
+      this.log("warn", `no content blocks produced for chat=${chatId}, dropping`);
+      this.pending.delete(chatId);
       return;
     }
 
-    this.streamHandler?.onPromptSent(channelId);
+    this.streamHandler?.onPromptSent(chatId);
 
     try {
       const response = await this.agent.prompt({
-        sessionId: channelId,
+        sessionId: chatId,
         prompt: contentBlocks,
       });
-      this.log("info", `prompt done chat=${channelId} stopReason=${response.stopReason}`);
-      this.streamHandler?.onTurnEnd(channelId);
+      this.log("info", `prompt done chat=${chatId} stopReason=${response.stopReason}`);
+      this.streamHandler?.onTurnEnd(chatId);
     } catch (error: unknown) {
       const errMsg = extractErrorMessage(error);
-      this.log("error", `prompt failed chat=${channelId}: ${errMsg}`);
-      this.streamHandler?.onTurnError(channelId, errMsg);
+      this.log("error", `prompt failed chat=${chatId}: ${errMsg}`);
+      this.streamHandler?.onTurnError(chatId, errMsg);
     }
   }
 
@@ -281,7 +281,7 @@ export class WeComBot {
    * cached file path plus metadata needed to build a resource_link block.
    */
   private async downloadImage(
-    channelId: string,
+    chatId: string,
     msgid: string,
     image: ImageContent,
   ): Promise<DownloadedImage> {
@@ -298,13 +298,13 @@ export class WeComBot {
       }
     })();
     const urlHint = path.basename(urlPath).replace(/[^a-zA-Z0-9._-]/g, "_");
-    const safeChannel = channelId.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeChannel = chatId.replace(/[^a-zA-Z0-9._-]/g, "_");
     const dir = path.join(this.cacheDir, "wecom", safeChannel);
     const baseName = `${msgid}-${urlHint || "image"}`;
 
     this.log(
       "debug",
-      `downloading image msgid=${msgid} chat=${channelId} url=${image.url}`,
+      `downloading image msgid=${msgid} chat=${chatId} url=${image.url}`,
     );
 
     const { buffer, filename } = await this.client.downloadFile(
