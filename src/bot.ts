@@ -259,6 +259,12 @@ export class WeComBot {
       return;
     }
 
+    const firstText = contentBlocks[0]?.type === "text" ? contentBlocks[0].text : "";
+    if (firstText && this.streamHandler?.consumePendingText(chatId, firstText)) {
+      this.pending.delete(chatId);
+      return;
+    }
+
     this.streamHandler?.onPromptSent(chatId);
 
     try {
